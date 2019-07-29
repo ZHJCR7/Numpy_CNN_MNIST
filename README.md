@@ -399,9 +399,9 @@ final result test_acc:0.9282;  val_acc:0.933
 
 loss值：可见loss值逐渐变小
 
-![](D:\Numpy_CNN_MNIST\Image\Loss.png)
+![](D:\software\Githubdeskplot\GitHub\My_Test\Image\Loss.png)
 
 具体可视化显示：基本上全部识别正确
 
-![](D:\Numpy_CNN_MNIST\Image\test_predict.png)
+![](D:\software\Githubdeskplot\GitHub\My_Test\Image\test_predict.png)
 
