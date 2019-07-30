@@ -18,7 +18,7 @@
 
 其计算流图如下：
 
-![](D:\Numpy_CNN_MNIST\Image\CNN.jpg)
+![](.\Image\CNN.jpg)
 
 训练过程中，我设置batch_size=4，迭代次数设置成2000，基于Numpy设计出来的网络，训练较慢，训练时间大概20min左右。
 
@@ -408,9 +408,9 @@ final result test_acc:0.9282;  val_acc:0.933
 
 loss值：可见loss值逐渐变小
 
-![](D:\Numpy_CNN_MNIST\Image\Loss.png)
+![](.\Image\Loss.png)
 
 具体可视化显示：基本上全部识别正确
 
-![](D:\Numpy_CNN_MNIST\Image\test_predict.png)
+![](.\Image\test_predict.png)
 
