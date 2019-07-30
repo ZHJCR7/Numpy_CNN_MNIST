@@ -4,6 +4,13 @@ import numpy as np
 优化方法我们使用随机梯度下降（SGD）
 """
 
+def _copy_weights_to_zeros(weights):
+    result = {}
+    result.keys()
+    for key in weights.keys():
+        result[key] = np.zeros_like(weights[key])
+    return result
+
 ##随机梯度下降
 class SGD(object):
     """

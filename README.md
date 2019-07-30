@@ -18,7 +18,7 @@
 
 其计算流图如下：
 
-![](./Image/CNN.jpg)
+![](D:\Numpy_CNN_MNIST\Image\CNN.jpg)
 
 训练过程中，我设置batch_size=4，迭代次数设置成2000，基于Numpy设计出来的网络，训练较慢，训练时间大概20min左右。
 
@@ -37,28 +37,36 @@ $$
 前向传播即是权重和输出乘积加上偏置对通道数，核的大小求和。
 
 ```python
-def conv_forward(z, K, b, padding=(0, 0), strides=(1, 1)):
+def convolution_forward(X_input, Kernel, b, padding=(0, 0), strides=(1, 1)):
     """
     多通道卷积前向过程
-    :param z: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
-    :param K: 卷积核,形状(C,D,k1,k2), C为输入通道数，D为输出通道数
+    :param X: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
+    :param Kernel: 卷积核,形状(C,D,k1,k2), C为输入通道数，D为输出通道数
     :param b: 偏置,形状(D,)
     :param padding: padding
     :param strides: 步长
     :return: 卷积结果
     """
-    padding_z = np.lib.pad(z, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant', constant_values=0)
-    N, _, height, width = padding_z.shape
-    C, D, k1, k2 = K.shape
+    padding_X = np.lib.pad(X_input, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant', constant_values=0)
+    N, _, height, width = padding_X.shape
+    C, D, k1, k2 = Kernel.shape
+    
+    ##简单设计，防止出现不能整除情况，可用floor函数避免
     assert (height - k1) % strides[0] == 0, '步长不为1时，步长必须刚好能够被整除'
     assert (width - k2) % strides[1] == 0, '步长不为1时，步长必须刚好能够被整除'
-    conv_z = np.zeros((N, D, 1 + (height - k1) // strides[0], 1 + (width - k2) // strides[1]))
+    
+    ##卷积之后的长度，padding为0
+    H_ = 1 + (height - k1) // strides[0]
+    W_ = 1 + (width - k2) // strides[1]
+    conv_X = np.zeros((N, D, H_,W_ ))
+    
+    ##求和操作
     for n in np.arange(N):
         for d in np.arange(D):
             for h in np.arange(height - k1 + 1)[::strides[0]]:
                 for w in np.arange(width - k2 + 1)[::strides[1]]:
-                    conv_z[n, d, h // strides[0], w // strides[1]] = np.sum(padding_z[n, :, h:h + k1, w:w + k2] * K[:, d]) + b[d]##归根结底求和
-    return conv_z
+                    conv_X[n, d, h // strides[0], w // strides[1]] = np.sum(padding_X[n, :, h:h + k1, w:w + k2] * Kernel[:, d]) + b[d]
+    return conv_X
 ```
 
 - #### 反向传播：
@@ -81,42 +89,42 @@ $$
 损失函数关于第L-1层权重的梯度为损失函数关于L层梯度在卷积核在Z（L-1）上做卷积的结果。另外我们还需定义两个内部函数,一个是在反向中对于步长大于1的卷积核,对输出层梯度行列(高度和宽宽)之间插入零;另一个是对于padding不为零的卷积核，在对输入层求梯度后，剔除padding。在自定义库CNN中，我们定义了_insert_zeros（）函数，实现每个行列之间增加指定的个数的零填充；_定义remove_padding（）函数实现移除padding。
 
 ```python
-def conv_backward(next_dz, K, z, padding=(0, 0), strides=(1, 1)):
+def convolution_backward(next_dX, Kernel, X, padding=(0, 0), strides=(1, 1)):
     """
     多通道卷积层的反向过程
-    :param next_dz: 卷积输出层的梯度,(N,D,H',W'),H',W'为卷积输出层的高度和宽度
-    :param K: 当前层卷积核，(C,D,k1,k2)
-    :param z: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
+    :param next_dX: 卷积输出层的梯度,(N,D,H',W'),H',W'为卷积输出层的高度和宽度
+    :param Kernel: 当前层卷积核，(C,D,k1,k2)
+    :param X: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
     :param padding: padding
     :param strides: 步长
     :return:
     """
-    N, C, H, W = z.shape
-    C, D, k1, k2 = K.shape
+    N, C, H, W = X.shape
+    C, D, k1, k2 = Kernel.shape
 
     # 卷积核梯度
-    # dK = np.zeros((C, D, k1, k2))
-    padding_next_dz = _insert_zeros(next_dz, strides)
+    padding_next_dX = _insert_zeros(next_dX, strides)
 
     # 卷积核高度和宽度翻转180度
-    flip_K = np.flip(K, (2, 3))
+    flip_K = np.flip(Kernel, (2, 3))
     # 交换C,D为D,C；D变为输入通道数了，C变为输出通道数了
     swap_flip_K = np.swapaxes(flip_K, 0, 1)
     # 增加高度和宽度0填充
-    ppadding_next_dz = np.lib.pad(padding_next_dz, ((0, 0), (0, 0), (k1 - 1, k1 - 1), (k2 - 1, k2 - 1)), 'constant', constant_values=0)
-    dz = conv_forward(ppadding_next_dz.astype(np.float64), swap_flip_K.astype(np.float64), np.zeros((C,), dtype=np.float64))
+    ppadding_next_dX = np.lib.pad(padding_next_dX, ((0, 0), (0, 0), (k1 - 1, k1 - 1), (k2 - 1, k2 - 1)), 'constant', constant_values=0)
+    ##rot(180)*W
+    dX = convolution_forward(ppadding_next_dX.astype(np.float64), swap_flip_K.astype(np.float64), np.zeros((C,), dtype=np.float64))
 
     # 求卷积核的梯度dK
-    swap_z = np.swapaxes(z, 0, 1)  # 变为(C,N,H,W)与
-    dK = conv_forward(swap_z.astype(np.float64), padding_next_dz.astype(np.float64), np.zeros((D,), dtype=np.float64))
+    swap_W = np.swapaxes(X, 0, 1)  # 变为(C,N,H,W)与
+    dW = convolution_forward(swap_W.astype(np.float64), padding_next_dX.astype(np.float64), np.zeros((D,), dtype=np.float64))
 
     # 偏置的梯度
-    db = np.sum(np.sum(np.sum(next_dz, axis=-1), axis=-1), axis=0)  # 在高度、宽度上相加；批量大小上相加
+    db = np.sum(np.sum(np.sum(next_dX, axis=-1), axis=-1), axis=0)  # 在高度、宽度上相加；批量大小上相加
 
     # 把padding减掉
-    dz = _remove_padding(dz, padding)  # dz[:, :, padding[0]:-padding[0], padding[1]:-padding[1]]
+    dX = _remove_padding(dX, padding)
 
-    return dK / N, db / N, dz
+    return dW / N, db / N, dX
 ```
 
 ### 2.池化层
@@ -133,33 +141,34 @@ $$
 $$
 
 ```python
-def max_pooling_forward(z, pooling, strides=(2, 2), padding=(0, 0)):
+def maxpooling_forward(X, pooling, strides=(2, 2), padding=(0, 0)):
     """
     最大池化前向过程
-    :param z: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
+    :param X: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
     :param pooling: 池化大小(k1,k2)
     :param strides: 步长
     :param padding: 0填充
     :return:
     """
-    N, C, H, W = z.shape
+    N, C, H, W = X.shape
     # 零填充
-    padding_z = np.lib.pad(z, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant', constant_values=0)
+    padding_X = np.lib.pad(X, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant', constant_values=0)
 
     # 输出的高度和宽度
-    out_h = (H + 2 * padding[0] - pooling[0]) // strides[0] + 1
-    out_w = (W + 2 * padding[1] - pooling[1]) // strides[1] + 1
+    H_ = (H + 2 * padding[0] - pooling[0]) // strides[0] + 1
+    W_ = (W + 2 * padding[1] - pooling[1]) // strides[1] + 1
 
-    pool_z = np.zeros((N, C, out_h, out_w))
+    pool_X = np.zeros((N, C, H_, W_))
 
     for n in np.arange(N):
         for c in np.arange(C):
-            for i in np.arange(out_h):
-                for j in np.arange(out_w):
-                    pool_z[n, c, i, j] = np.max(padding_z[n, c,
+            for i in np.arange(H_):
+                for j in np.arange(W_):
+                    ##参考公式中i*s< <i*s+k
+                    pool_X[n, c, i, j] = np.max(padding_X[n, c,
                                                           strides[0] * i:strides[0] * i + pooling[0],
                                                           strides[1] * j:strides[1] * j + pooling[1]])
-    return pool_z
+    return pool_X
 ```
 
 - #### 反向传播：
@@ -399,9 +408,9 @@ final result test_acc:0.9282;  val_acc:0.933
 
 loss值：可见loss值逐渐变小
 
-![](./Image/Loss.png)
+![](D:\Numpy_CNN_MNIST\Image\Loss.png)
 
 具体可视化显示：基本上全部识别正确
 
-![](./Image/test_predict.png)
+![](D:\Numpy_CNN_MNIST\Image\test_predict.png)
 
