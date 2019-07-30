@@ -189,37 +189,38 @@ $$
 $$
 
 ```python
-def max_pooling_backward(next_dz, z, pooling, strides=(2, 2), padding=(0, 0)):
+def maxpooling_backward(next_dX, X, pooling, strides=(2, 2), padding=(0, 0)):
     """
     最大池化反向过程
-    :param next_dz：损失函数关于最大池化输出的损失
-    :param z: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
+    :param next_dX：损失函数关于最大池化输出的损失
+    :param X: 卷积层矩阵,形状(N,C,H,W)，N为batch_size，C为通道数
     :param pooling: 池化大小(k1,k2)
     :param strides: 步长
     :param padding: 0填充
     :return:
     """
-    N, C, H, W = z.shape
-    _, _, out_h, out_w = next_dz.shape
+    N, C, H, W = X.shape
+    _, _, H_, W_ = next_dX.shape
     # 零填充
-    padding_z = np.lib.pad(z, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant',
-                           constant_values=0)
+    padding_X = np.lib.pad(X, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant',constant_values=0)
+    
     # 零填充后的梯度
-    padding_dz = np.zeros_like(padding_z)
+    padding_dX = np.zeros_like(padding_X)
 
     for n in np.arange(N):
         for c in np.arange(C):
-            for i in np.arange(out_h):
-                for j in np.arange(out_w):
+            for i in np.arange(H_):
+                for j in np.arange(W_):
                     # 找到最大值的那个元素坐标，将梯度传给这个坐标
-                    flat_idx = np.argmax(padding_z[n, c,
+                    #参考公式s1*i+k1和s2*j+k2
+                    flat_idx = np.argmax(padding_X[n, c,
                                                    strides[0] * i:strides[0] * i + pooling[0],
                                                    strides[1] * j:strides[1] * j + pooling[1]])
                     h_idx = strides[0] * i + flat_idx // pooling[1]
                     w_idx = strides[1] * j + flat_idx % pooling[1]
-                    padding_dz[n, c, h_idx, w_idx] += next_dz[n, c, i, j]
+                    padding_dX[n, c, h_idx, w_idx] += next_dX[n, c, i, j]
     # 返回时剔除零填充
-    return _remove_padding(padding_dz, padding)
+    return _remove_padding(padding_dX, padding)
 ```
 
 ### 3.全连接层
