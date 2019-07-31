@@ -12,11 +12,14 @@ def _copy_weights_to_zeros(weights):
     return result
 
 ##随机梯度下降
+##参考网页：https://github.com/keras-team/keras/blob/master/keras/optimizers.py#L157
+##          https://pytorch.org/docs/stable/optim.html
 class SGD(object):
     """
     小批量梯度下降法
     """
 
+    ##初始化权重学习率动量因子迭代次数
     def __init__(self, weights, lr=0.01, momentum=0.9, decay=1e-5):
         """
         :param weights: 权重，字典类型
