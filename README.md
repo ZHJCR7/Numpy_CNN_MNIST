@@ -47,25 +47,31 @@ def convolution_forward(X_input, Kernel, b, padding=(0, 0), strides=(1, 1)):
     :param strides: 步长
     :return: 卷积结果
     """
-    padding_X = np.lib.pad(X_input, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant', constant_values=0)
+    padding_X = np.lib.pad(X_input, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant',
+                           constant_values=0)
     N, _, height, width = padding_X.shape
     C, D, k1, k2 = Kernel.shape
-    
+
     ##简单设计，防止出现不能整除情况，可用floor函数避免
-    assert (height - k1) % strides[0] == 0, '步长不为1时，步长必须刚好能够被整除'
-    assert (width - k2) % strides[1] == 0, '步长不为1时，步长必须刚好能够被整除'
-    
+    h_ = (height - k1) % strides[0]
+    w_ = (width - k2) % strides[1]
+
+    ##设计简单，不为整数报错
+    if not h_.is_integer() or not w_.is_integer():
+        raise Exception('Invalid output dimension!')
+
+    ##强制整除
     ##卷积之后的长度，padding为0
     H_ = 1 + (height - k1) // strides[0]
     W_ = 1 + (width - k2) // strides[1]
-    conv_X = np.zeros((N, D, H_,W_ ))
-    
+    conv_X = np.zeros((N, D, H_, W_))
+
     ##求和操作
     for n in np.arange(N):
         for d in np.arange(D):
-            for h in np.arange(height - k1 + 1)[::strides[0]]:
-                for w in np.arange(width - k2 + 1)[::strides[1]]:
-                    conv_X[n, d, h // strides[0], w // strides[1]] = np.sum(padding_X[n, :, h:h + k1, w:w + k2] * Kernel[:, d]) + b[d]
+            for h in np.arange(height - k1 + 1):
+                for w in np.arange(width - k2 + 1):
+                    conv_X[n, d, h, w] = np.sum(padding_X[n, :, h:h + k1, w:w + k2] * Kernel[:, d]) + b[d]
     return conv_X
 ```
 
@@ -86,7 +92,7 @@ $$
 \end{align}
 $$
 
-损失函数关于第L-1层权重的梯度为损失函数关于L层梯度在卷积核在Z（L-1）上做卷积的结果。另外我们还需定义两个内部函数,一个是在反向中对于步长大于1的卷积核,对输出层梯度行列(高度和宽宽)之间插入零;另一个是对于padding不为零的卷积核，在对输入层求梯度后，剔除padding。在自定义库CNN中，我们定义了_insert_zeros（）函数，实现每个行列之间增加指定的个数的零填充；_定义remove_padding（）函数实现移除padding。
+损失函数关于第L-1层权重的梯度为损失函数关于L层梯度在卷积核在Z（L-1）上做卷积的结果。另外我们还需定义两个内部函数,一个是在反向中对于步长大于1的卷积核,对输出层梯度行列(高度和宽宽)之间插入零;另一个是对于padding不为零的卷积核，在对输入层求梯度后，剔除padding。在自定义库CNN中，我们定义了_Zeros_padding（）函数，实现每个行列之间增加指定的个数的零填充；_定义Zeros_remove（）函数实现移除padding。
 
 ```python
 def convolution_backward(next_dX, Kernel, X, padding=(0, 0), strides=(1, 1)):
@@ -103,16 +109,19 @@ def convolution_backward(next_dX, Kernel, X, padding=(0, 0), strides=(1, 1)):
     C, D, k1, k2 = Kernel.shape
 
     # 卷积核梯度
-    padding_next_dX = _insert_zeros(next_dX, strides)
+    padding_next_dX = Zeros_padding(next_dX, strides)
+    # 增加高度和宽度0填充
+    ppadding_next_dX = np.lib.pad(padding_next_dX, ((0, 0), (0, 0), (k1 - 1, k1 - 1), (k2 - 1, k2 - 1)), 'constant',
+                                  constant_values=0)
 
+    #旋转180度
     # 卷积核高度和宽度翻转180度
     flip_K = np.flip(Kernel, (2, 3))
     # 交换C,D为D,C；D变为输入通道数了，C变为输出通道数了
-    swap_flip_K = np.swapaxes(flip_K, 0, 1)
-    # 增加高度和宽度0填充
-    ppadding_next_dX = np.lib.pad(padding_next_dX, ((0, 0), (0, 0), (k1 - 1, k1 - 1), (k2 - 1, k2 - 1)), 'constant', constant_values=0)
+    switch_flip_K = np.swapaxes(flip_K, 0, 1)
+
     ##rot(180)*W
-    dX = convolution_forward(ppadding_next_dX.astype(np.float64), swap_flip_K.astype(np.float64), np.zeros((C,), dtype=np.float64))
+    dX = convolution_forward(ppadding_next_dX.astype(np.float64), switch_flip_K.astype(np.float64), np.zeros((C,), dtype=np.float64))
 
     # 求卷积核的梯度dK
     swap_W = np.swapaxes(X, 0, 1)  # 变为(C,N,H,W)与
@@ -122,7 +131,7 @@ def convolution_backward(next_dX, Kernel, X, padding=(0, 0), strides=(1, 1)):
     db = np.sum(np.sum(np.sum(next_dX, axis=-1), axis=-1), axis=0)  # 在高度、宽度上相加；批量大小上相加
 
     # 把padding减掉
-    dX = _remove_padding(dX, padding)
+    dX = Zeros_remove(dX, padding)
 
     return dW / N, db / N, dX
 ```
@@ -165,10 +174,10 @@ def maxpooling_forward(X, pooling, strides=(2, 2), padding=(0, 0)):
             for i in np.arange(H_):
                 for j in np.arange(W_):
                     ##参考公式中i*s< <i*s+k
-                    pool_X[n, c, i, j] = np.max(padding_X[n, c,
-                                                          strides[0] * i:strides[0] * i + pooling[0],
-                                                          strides[1] * j:strides[1] * j + pooling[1]])
-    return pool_X
+                    mm = strides[0] * i:strides[0] * i + pooling[0]
+                    nn = strides[1] * j:strides[1] * j + pooling[1]
+                    pool_X[n, c, i, j] = np.max(padding_X[n, c, mm, nn])
+    return pool_X ##输出可以加一个assert
 ```
 
 - #### 反向传播：
@@ -202,8 +211,9 @@ def maxpooling_backward(next_dX, X, pooling, strides=(2, 2), padding=(0, 0)):
     N, C, H, W = X.shape
     _, _, H_, W_ = next_dX.shape
     # 零填充
-    padding_X = np.lib.pad(X, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant',constant_values=0)
-    
+    padding_X = np.lib.pad(X, ((0, 0), (0, 0), (padding[0], padding[0]), (padding[1], padding[1])), 'constant',
+                           constant_values=0)
+
     # 零填充后的梯度
     padding_dX = np.zeros_like(padding_X)
 
@@ -212,15 +222,16 @@ def maxpooling_backward(next_dX, X, pooling, strides=(2, 2), padding=(0, 0)):
             for i in np.arange(H_):
                 for j in np.arange(W_):
                     # 找到最大值的那个元素坐标，将梯度传给这个坐标
-                    #参考公式s1*i+k1和s2*j+k2
-                    flat_idx = np.argmax(padding_X[n, c,
-                                                   strides[0] * i:strides[0] * i + pooling[0],
-                                                   strides[1] * j:strides[1] * j + pooling[1]])
+                    # 参考公式s1*i+k1和s2*j+k2
+                    mm = strides[0] * i:strides[0] * i + pooling[0]
+                    nn = strides[1] * j:strides[1] * j + pooling[1]
+                    flat_idx = np.argmax(padding_X[n, c,mm, nn])
+
                     h_idx = strides[0] * i + flat_idx // pooling[1]
                     w_idx = strides[1] * j + flat_idx % pooling[1]
                     padding_dX[n, c, h_idx, w_idx] += next_dX[n, c, i, j]
     # 返回时剔除零填充
-    return _remove_padding(padding_dX, padding)
+    return Zeros_remove(padding_dX, padding)
 ```
 
 ### 3.全连接层
@@ -234,15 +245,14 @@ $$
 
 
 ```python
-#全连接层的前向传播
-def fc_forward(z, W, b):
+def fullyconnected_forward(X, W, b):
     """
-    :param z: 当前层的输出,形状 (N,ln)
+    :param X: 当前层的输出,形状 (N,ln)
     :param W: 当前层的权重
     :param b: 当前层的偏置
     :return: 下一层的输出
     """
-    return np.dot(z, W) + b
+    return np.dot(X, W) + b
 ```
 
 - #### 反向传播
@@ -262,18 +272,18 @@ $$
 
 ```python
 #全连接层的反向传播
-def fc_backward(next_dz, W, z):
+def fullyconnected_backward(next_dX, W, X):
     """
-    :param next_dz: 下一层的梯度
+    :param next_dX: 下一层的梯度
     :param W: 当前层的权重
-    :param z: 当前层的输出
+    :param X: 当前层的输出
     :return:
     """
-    N = z.shape[0]
-    dz = np.dot(next_dz, W.T)  # 当前层的梯度
-    dw = np.dot(z.T, next_dz)  # 当前层权重的梯度
-    db = np.sum(next_dz, axis=0)  # 当前层偏置的梯度, N个样本的梯度求和
-    return dw / N, db / N, dz
+    N = X.shape[0]
+    delta = np.dot(next_dX, W.T)  # 当前层的梯度
+    dw = np.dot(X.T, next_dX)  # 当前层权重的梯度
+    db = np.sum(next_dX, axis=0)  # 当前层偏置的梯度, N个样本的梯度求和
+    return dw / N, db / N, delta
 ```
 
 ### 4.损失函数
@@ -316,6 +326,8 @@ $$
 class SGD(object):
     """
     小批量梯度下降法
+    ##参考网页：https://github.com/keras-team/keras/blob/master/keras/optimizers.py#L157
+	##          https://pytorch.org/docs/stable/optim.html
     """
 
     def __init__(self, weights, lr=0.01, momentum=0.9, decay=1e-5):
@@ -362,14 +374,13 @@ z &  z>0 \\
 $$
 
 ```python
-def relu_forward(z):
+def relu_forward(X):
     """
     relu前向传播
-    :param z: 待激活层
+    :param X: 待激活层
     :return: 激活后的结果
     """
-    return np.maximum(0, z)
-
+    return np.maximum(0, X)
 ```
 
 - #### 反向传播
@@ -390,15 +401,15 @@ $$
 $$
 
 ```python
-def relu_backward(next_dz, z):
+def relu_backward(next_dX, X):
     """
     relu反向传播
-    :param next_dz: 激活后的梯度
-    :param z: 激活前的值
+    :param next_dX: 激活后的梯度
+    :param X: 激活前的值
     :return:
     """
-    dz = np.where(np.greater(z, 0), next_dz, 0)
-    return dz
+    dX = np.where(np.greater(X, 0), next_dX, 0)
+    return dX
 ```
 
 ## 测试结果
